@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Video Player</title>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; background: #111827; color: #e5e7eb; }
+    main { width: min(960px, calc(100% - 32px)); margin: 48px auto; }
+    h1 { font-size: 1.6rem; margin-bottom: 24px; }
+    form { display: flex; gap: 8px; margin-bottom: 16px; }
+    input { flex: 1; min-width: 0; padding: 12px; border: 1px solid #4b5563; border-radius: 6px; background: #1f2937; color: inherit; }
+    button { padding: 10px 16px; border: 0; border-radius: 6px; background: #2563eb; color: white; cursor: pointer; }
+    button:hover, button.active { background: #1d4ed8; }
+    button:disabled { cursor: wait; opacity: .65; }
+    video { display: block; width: 100%; max-height: 70vh; background: #000; border-radius: 8px; }
+    #sources { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+    #status { min-height: 1.5em; color: #9ca3af; }
+    .error { color: #fca5a5 !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Video Player</h1>
+    <form id="lookup-form">
+      <input id="page-url" list="url-history" type="url" required placeholder="https://example.com/video-page" aria-label="Video page URL">
+      <datalist id="url-history"></datalist>
+      <button id="find-button" type="submit">Find videos</button>
+      <button id="delete-button" type="button">Delete saved</button>
+    </form>
+    <p id="status" role="status"></p>
+    <div id="sources" aria-label="Video sources"></div>
+    <video id="player" controls playsinline></video>
+  </main>
+
+  <script>
+    const form = document.querySelector('#lookup-form');
+    const input = document.querySelector('#page-url');
+    const findButton = document.querySelector('#find-button');
+    const deleteButton = document.querySelector('#delete-button');
+    const historyList = document.querySelector('#url-history');
+    const status = document.querySelector('#status');
+    const sources = document.querySelector('#sources');
+    const player = document.querySelector('#player');
+    let hls = null;
+    let pollTimer = null;
+    const knownSources = new Set();
+
+    async function readJson(response) {
+      const body = await response.text();
+      try {
+        return body ? JSON.parse(body) : {};
+      } catch {
+        throw new Error(`API returned HTTP ${response.status} instead of JSON.`);
+      }
+    }
+
+    async function loadHistory() {
+      const response = await fetch('/history');
+      const data = await readJson(response);
+      if (!response.ok) throw new Error(data.error || `History request failed (${response.status}).`);
+      historyList.replaceChildren(...(data.urls || []).map(url => {
+        const option = document.createElement('option');
+        option.value = url;
+        return option;
+      }));
+    }
+
+    function setStatus(message, isError = false) {
+      status.textContent = message;
+      status.classList.toggle('error', isError);
+    }
+
+    function isHls(source) {
+      const type = (source.content_type || '').toLowerCase();
+      return type.includes('mpegurl') || /\.m3u8(?:[?#]|$)/i.test(source.url);
+    }
+
+    function playSource(source, button) {
+      document.querySelectorAll('#sources button').forEach(item => item.classList.remove('active'));
+      button.classList.add('active');
+      if (hls) {
+        hls.destroy();
+        hls = null;
+      }
+      player.removeAttribute('src');
+      player.load();
+      const playbackUrl = source.url;
+
+      if (isHls(source) && window.Hls && Hls.isSupported()) {
+        hls = new Hls();
+        hls.loadSource(playbackUrl);
+        hls.attachMedia(player);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => player.play().catch(() => {}));
+      } else {
+        player.src = playbackUrl;
+        player.load();
+        player.play().catch(() => {});
+      }
+    }
+
+    function renderSources(videos) {
+      videos.forEach((source) => {
+        if (knownSources.has(source.url)) return;
+        knownSources.add(source.url);
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = `Source ${sources.children.length + 1}`;
+        button.addEventListener('click', () => playSource(source, button));
+        sources.appendChild(button);
+        if (sources.children.length === 1) playSource(source, button);
+      });
+    }
+
+    async function pollJob(jobId) {
+      pollTimer = null;
+      try {
+        const response = await fetch(`/jobs/${jobId}`);
+        const job = await readJson(response);
+        if (!response.ok) throw new Error(job.error || 'The job request failed.');
+        renderSources(job.videos || []);
+        const progress = job.total ? ` (${job.completed}/${job.total} sources checked)` : '';
+        setStatus(`${job.videos?.length || 0} source(s) found${progress}.`);
+        if (job.status === 'running') {
+          pollTimer = setTimeout(() => pollJob(jobId), 5000);
+        } else if (job.status === 'failed') {
+          setStatus(job.error || 'Source discovery failed.', true);
+        } else if (!job.videos?.length) {
+          setStatus('No video sources found.', true);
+        }
+      } catch (error) {
+        setStatus(error.message, true);
+      } finally {
+        if (!pollTimer) findButton.disabled = false;
+      }
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      findButton.disabled = true;
+      if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+      knownSources.clear();
+      sources.replaceChildren();
+      if (hls) { hls.destroy(); hls = null; }
+      player.removeAttribute('src');
+      player.load();
+      setStatus('Finding video sources…');
+      try {
+        const response = await fetch('/jobs', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({url: input.value})
+        });
+        const data = await readJson(response);
+        if (!response.ok) throw new Error(data.error || 'The API request failed.');
+        await pollJob(data.job_id);
+      } catch (error) {
+        setStatus(error.message, true);
+        findButton.disabled = false;
+      } finally {
+        if (!pollTimer) findButton.disabled = false;
+      }
+    });
+
+    deleteButton.addEventListener('click', async () => {
+      if (!input.value) return;
+      await fetch(`/history?url=${encodeURIComponent(input.value)}`, {method: 'DELETE'});
+      input.value = '';
+      await loadHistory();
+      setStatus('Saved URL deleted.');
+    });
+
+    loadHistory().catch(() => setStatus('Could not load saved URLs.', true));
+  </script>
+</body>
+</html>
