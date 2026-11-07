@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Manage URLs - xBiteTV</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; background: #111827; color: #e5e7eb; }
+    main { width: min(720px, calc(100% - 32px)); margin: 36px auto; }
+    h1 { font-size: 1.5rem; }
+    form { display: flex; gap: 8px; margin: 20px 0; }
+    input { flex: 1; min-width: 0; padding: 12px; border: 1px solid #4b5563; border-radius: 6px; background: #1f2937; color: inherit; font-size: 1rem; }
+    button { padding: 10px 16px; border: 0; border-radius: 6px; background: #2563eb; color: white; cursor: pointer; }
+    .delete { background: #b91c1c; padding: 8px 12px; }
+    ul { list-style: none; padding: 0; display: grid; gap: 8px; }
+    li { display: flex; align-items: center; gap: 10px; padding: 10px; background: #1f2937; border-radius: 6px; }
+    li span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+    #status { min-height: 1.5em; color: #9ca3af; }
+    .error { color: #fca5a5 !important; }
+    a { color: #93c5fd; }
+  </style>
+</head>
+<body>
+  <main>
+    <a href="/">Back to player</a>
+    <h1>Manage URLs</h1>
+    <form id="url-form">
+      <input id="url-input" type="url" required placeholder="https://example.com/video-page" aria-label="Video page URL">
+      <button type="submit">Add</button>
+    </form>
+    <p id="status" role="status"></p>
+    <ul id="url-list"></ul>
+  </main>
+  <script>
+    const form = document.querySelector('#url-form');
+    const input = document.querySelector('#url-input');
+    const status = document.querySelector('#status');
+    const list = document.querySelector('#url-list');
+
+    async function readJson(response) {
+      const body = await response.text();
+      try { return body ? JSON.parse(body) : {}; }
+      catch { throw new Error(`API returned HTTP ${response.status} instead of JSON.`); }
+    }
+
+    function setStatus(message, isError = false) {
+      status.textContent = message;
+      status.classList.toggle('error', isError);
+    }
+
+    function render(urls) {
+      list.replaceChildren();
+      urls.forEach(url => {
+        const row = document.createElement('li');
+        const value = document.createElement('span');
+        value.textContent = url;
+        const remove = document.createElement('button');
+        remove.className = 'delete';
+        remove.type = 'button';
+        remove.textContent = 'X';
+        remove.title = 'Delete URL';
+        remove.addEventListener('click', () => deleteUrl(url));
+        row.append(value, remove);
+        list.appendChild(row);
+      });
+    }
+
+    async function load() {
+      const response = await fetch('/history');
+      const data = await readJson(response);
+      if (!response.ok) throw new Error(data.error || ('History request failed (' + response.status + ').'));
+      render(data.urls || []);
+    }
+
+    async function deleteUrl(url) {
+      try {
+        const response = await fetch('/history?url=' + encodeURIComponent(url), {method: 'DELETE'});
+        const data = await readJson(response);
+        if (!response.ok) throw new Error(data.error || ('Delete failed (' + response.status + ').'));
+        render(data.urls || []);
+        setStatus('URL deleted.');
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    }
+
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      try {
+        const response = await fetch('/history', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({url: input.value})
+        });
+        const data = await readJson(response);
+        if (!response.ok) throw new Error(data.error || ('Add failed (' + response.status + ').'));
+        render(data.urls || []);
+        input.value = '';
+        setStatus('URL added.');
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+
+    load().catch(error => setStatus(error.message, true));
+  </script>
+</body>
+</html>

@@ -3,176 +3,188 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Video Player</title>
+  <title>xBiteTV</title>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
   <style>
     :root { color-scheme: dark; font-family: system-ui, sans-serif; }
     body { margin: 0; background: #111827; color: #e5e7eb; }
-    main { width: min(960px, calc(100% - 32px)); margin: 48px auto; }
-    h1 { font-size: 1.6rem; margin-bottom: 24px; }
-    form { display: flex; gap: 8px; margin-bottom: 16px; }
-    input { flex: 1; min-width: 0; padding: 12px; border: 1px solid #4b5563; border-radius: 6px; background: #1f2937; color: inherit; }
-    button { padding: 10px 16px; border: 0; border-radius: 6px; background: #2563eb; color: white; cursor: pointer; }
-    button:hover, button.active { background: #1d4ed8; }
-    button:disabled { cursor: wait; opacity: .65; }
+    main { width: min(960px, calc(100% - 32px)); margin: 36px auto; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    h1 { font-size: 1.6rem; margin: 0 0 20px; }
+    a { color: #93c5fd; }
+    #url-list { display: grid; gap: 8px; margin-bottom: 18px; }
+    .url-row { display: flex; align-items: center; gap: 12px; }
+    .url-row.selected .url-value { outline: 2px solid #a855f7; }
+    .url-row.selected .find-button { background: #a855f7; }
+    .url-value { flex: 1; min-width: 0; padding: 12px; background: #1f2937; border-radius: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    button { padding: 10px 16px; border: 0; border-radius: 8px; background: #2563eb; color: white; cursor: pointer; }
+    button:hover { background: #1d4ed8; }
+    .source-button { background: #2563eb; }
+    .source-button:hover { background: #1d4ed8; }
+    .source-button.active { background: #15803d; }
     video { display: block; width: 100%; max-height: 70vh; background: #000; border-radius: 8px; }
+    video:focus { outline: 3px solid #a855f7; outline-offset: 3px; }
     #sources { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
-    #status { min-height: 1.5em; color: #9ca3af; }
+    #status, #selected-url { min-height: 1.5em; color: #9ca3af; overflow-wrap: anywhere; }
     .error { color: #fca5a5 !important; }
+    .empty { color: #9ca3af; padding: 12px 0; }
   </style>
 </head>
 <body>
   <main>
-    <h1>Video Player</h1>
-    <form id="lookup-form">
-      <input id="page-url" list="url-history" type="url" required placeholder="https://example.com/video-page" aria-label="Video page URL">
-      <datalist id="url-history"></datalist>
-      <button id="find-button" type="submit">Find videos</button>
-      <button id="delete-button" type="button">Delete saved</button>
-    </form>
+    <header><h1>xBiteTV</h1></header>
+    <section id="url-list" aria-label="Saved URLs"></section>
     <p id="status" role="status"></p>
+    <p id="selected-url" aria-live="polite"></p>
     <div id="sources" aria-label="Video sources"></div>
-    <video id="player" controls playsinline></video>
+    <video id="player" controls playsinline tabindex="0"></video>
   </main>
-
   <script>
-    const form = document.querySelector('#lookup-form');
-    const input = document.querySelector('#page-url');
-    const findButton = document.querySelector('#find-button');
-    const deleteButton = document.querySelector('#delete-button');
-    const historyList = document.querySelector('#url-history');
+    const urlList = document.querySelector('#url-list');
     const status = document.querySelector('#status');
+    const selectedUrlLabel = document.querySelector('#selected-url');
     const sources = document.querySelector('#sources');
     const player = document.querySelector('#player');
     let hls = null;
     let pollTimer = null;
+    let activeUrl = '';
     const knownSources = new Set();
 
     async function readJson(response) {
       const body = await response.text();
-      try {
-        return body ? JSON.parse(body) : {};
-      } catch {
-        throw new Error(`API returned HTTP ${response.status} instead of JSON.`);
-      }
+      try { return body ? JSON.parse(body) : {}; }
+      catch { throw new Error('API returned HTTP ' + response.status + ' instead of JSON.'); }
     }
-
-    async function loadHistory() {
-      const response = await fetch('/history');
-      const data = await readJson(response);
-      if (!response.ok) throw new Error(data.error || `History request failed (${response.status}).`);
-      historyList.replaceChildren(...(data.urls || []).map(url => {
-        const option = document.createElement('option');
-        option.value = url;
-        return option;
-      }));
-    }
-
-    function setStatus(message, isError = false) {
+    function setStatus(message, isError) {
       status.textContent = message;
-      status.classList.toggle('error', isError);
+      status.classList.toggle('error', Boolean(isError));
     }
-
     function isHls(source) {
       const type = (source.content_type || '').toLowerCase();
       return type.includes('mpegurl') || /\.m3u8(?:[?#]|$)/i.test(source.url);
     }
-
     function playSource(source, button) {
-      document.querySelectorAll('#sources button').forEach(item => item.classList.remove('active'));
+      document.querySelectorAll('.source-button').forEach(item => item.classList.remove('active'));
       button.classList.add('active');
-      if (hls) {
-        hls.destroy();
-        hls = null;
-      }
+      if (hls) { hls.destroy(); hls = null; }
       player.removeAttribute('src');
       player.load();
-      const playbackUrl = source.url;
-
       if (isHls(source) && window.Hls && Hls.isSupported()) {
         hls = new Hls();
-        hls.loadSource(playbackUrl);
+        hls.loadSource(source.url);
         hls.attachMedia(player);
         hls.on(Hls.Events.MANIFEST_PARSED, () => player.play().catch(() => {}));
       } else {
-        player.src = playbackUrl;
+        player.src = source.url;
         player.load();
         player.play().catch(() => {});
       }
     }
 
+    async function enterFullscreen() {
+      if (document.fullscreenElement) return;
+      const request = player.requestFullscreen || player.webkitRequestFullscreen;
+      if (request) {
+        try { await request.call(player); } catch (_) { /* fullscreen may be unavailable */ }
+      }
+    }
+
+    player.addEventListener('click', enterFullscreen);
+    player.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        enterFullscreen();
+      }
+    });
     function renderSources(videos) {
-      videos.forEach((source) => {
+      videos.forEach(source => {
         if (knownSources.has(source.url)) return;
         knownSources.add(source.url);
         const button = document.createElement('button');
+        button.className = 'source-button';
         button.type = 'button';
-        button.textContent = `Source ${sources.children.length + 1}`;
+        button.textContent = 'Source ' + (sources.children.length + 1);
         button.addEventListener('click', () => playSource(source, button));
         sources.appendChild(button);
         if (sources.children.length === 1) playSource(source, button);
       });
     }
-
     async function pollJob(jobId) {
-      pollTimer = null;
       try {
-        const response = await fetch(`/jobs/${jobId}`);
+        const response = await fetch('/jobs/' + jobId);
         const job = await readJson(response);
-        if (!response.ok) throw new Error(job.error || 'The job request failed.');
+        if (!response.ok) throw new Error(job.error || 'Job request failed (' + response.status + ').');
         renderSources(job.videos || []);
-        const progress = job.total ? ` (${job.completed}/${job.total} sources checked)` : '';
-        setStatus(`${job.videos?.length || 0} source(s) found${progress}.`);
-        if (job.status === 'running') {
-          pollTimer = setTimeout(() => pollJob(jobId), 5000);
-        } else if (job.status === 'failed') {
-          setStatus(job.error || 'Source discovery failed.', true);
-        } else if (!job.videos?.length) {
-          setStatus('No video sources found.', true);
-        }
+        const progress = job.total ? ' (' + job.completed + '/' + job.total + ' sources checked)' : '';
+        setStatus((job.videos?.length || 0) + ' source(s) found' + progress + '.');
+        if (job.status === 'running') pollTimer = setTimeout(() => pollJob(jobId), 5000);
+        else if (job.status === 'failed') setStatus(job.error || 'Video discovery failed.', true);
+        else if (!job.videos?.length) setStatus('No video sources found.', true);
       } catch (error) {
         setStatus(error.message, true);
-      } finally {
-        if (!pollTimer) findButton.disabled = false;
       }
     }
-
-    form.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      findButton.disabled = true;
+    async function startJob(url) {
+      activeUrl = url;
+      selectedUrlLabel.textContent = 'Selected URL: ' + url;
+      document.querySelectorAll('.url-row').forEach(row => {
+        row.classList.toggle('selected', row.dataset.url === url);
+      });
       if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
       knownSources.clear();
       sources.replaceChildren();
       if (hls) { hls.destroy(); hls = null; }
       player.removeAttribute('src');
       player.load();
-      setStatus('Finding video sources…');
+      setStatus('Checking ' + url + '...');
       try {
         const response = await fetch('/jobs', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({url: input.value})
+          body: JSON.stringify({url: url})
         });
-        const data = await readJson(response);
-        if (!response.ok) throw new Error(data.error || 'The API request failed.');
-        await pollJob(data.job_id);
+        const job = await readJson(response);
+        if (!response.ok) throw new Error(job.error || 'Job request failed (' + response.status + ').');
+        await pollJob(job.job_id);
       } catch (error) {
         setStatus(error.message, true);
-        findButton.disabled = false;
-      } finally {
-        if (!pollTimer) findButton.disabled = false;
       }
-    });
-
-    deleteButton.addEventListener('click', async () => {
-      if (!input.value) return;
-      await fetch(`/history?url=${encodeURIComponent(input.value)}`, {method: 'DELETE'});
-      input.value = '';
-      await loadHistory();
-      setStatus('Saved URL deleted.');
-    });
-
-    loadHistory().catch(() => setStatus('Could not load saved URLs.', true));
+    }
+    function renderHistory(urls) {
+      urlList.replaceChildren();
+      if (!urls.length) {
+        const empty = document.createElement('div');
+        empty.className = 'empty';
+        empty.textContent = 'No saved URLs. Open Manage URLs to add one.';
+        urlList.appendChild(empty);
+        return;
+      }
+      urls.forEach(url => {
+        const row = document.createElement('div');
+        row.className = 'url-row';
+        row.dataset.url = url;
+        if (url === activeUrl) row.classList.add('selected');
+        const value = document.createElement('span');
+        value.className = 'url-value';
+        value.title = url;
+        value.textContent = url;
+        const find = document.createElement('button');
+        find.className = 'find-button';
+        find.type = 'button';
+        find.textContent = 'Find videos';
+        find.addEventListener('click', () => startJob(url));
+        row.append(value, find);
+        urlList.appendChild(row);
+      });
+    }
+    async function loadHistory() {
+      const response = await fetch('/history');
+      const data = await readJson(response);
+      if (!response.ok) throw new Error(data.error || 'History request failed (' + response.status + ').');
+      renderHistory(data.urls || []);
+    }
+    loadHistory().catch(error => setStatus(error.message, true));
+    setInterval(() => loadHistory().catch(() => {}), 5000);
   </script>
 </body>
 </html>

@@ -158,6 +158,10 @@ def create_app() -> Flask:
     def index():
         return app.send_static_file("index.html")
 
+    @app.get("/input.html")
+    def input_page():
+        return app.send_static_file("input.html")
+
     @app.get("/health")
     def health() -> tuple[dict[str, str], int]:
         return {"status": "ok"}, 200
@@ -166,6 +170,17 @@ def create_app() -> Flask:
     def get_history() -> tuple[dict, int]:
         with history_lock:
             return {"urls": list(history_urls)}, 200
+
+    @app.post("/history")
+    def add_history_url() -> tuple[dict, int]:
+        payload = request.get_json(silent=True) or {}
+        try:
+            target_url = _validate_target_url(payload.get("url"))
+        except (AttributeError, ValueError) as exc:
+            return {"error": str(exc)}, 400
+        _remember_url(target_url)
+        with history_lock:
+            return {"urls": list(history_urls)}, 201
 
     @app.delete("/history")
     def delete_history_url() -> tuple[dict, int]:

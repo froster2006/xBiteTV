@@ -1,10 +1,10 @@
 services:
   urlsteam:
-    image: YOUR_DOCKERHUB_USERNAME/urlsteam:latest
+    image: froster2006/urlsteam:latest
     container_name: urlsteam
     restart: unless-stopped
     ports:
-      - "5000:5000"
+      - "7666:5000"
     init: true
     shm_size: "1gb"
     environment:

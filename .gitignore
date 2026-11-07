@@ -38,3 +38,11 @@ Thumbs.db
 # Docker overrides and local state
 docker-compose.override.yml
 compose.override.yaml
+
+# Android/Gradle build output
+.gradle/
+tv-app/app/build/
+tv-app/build/
+tv-app/out/
+tv-app/local.properties
+tv-app/debug.keystore

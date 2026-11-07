@@ -50,6 +50,6 @@ docker compose pull
 docker compose up -d
 ```
 
-Open port 5000 on the NAS. URL history is stored in memory and resets when the service restarts.
+Open port 7666 on the NAS. URL history is stored in memory and resets when the service restarts.
 
 Only use the service with sites and media you are authorized to access. Do not use it to bypass DRM, paywalls, authentication, or access controls.
