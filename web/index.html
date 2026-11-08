@@ -10,6 +10,7 @@
     body { margin: 0; background: #111827; color: #e5e7eb; }
     main { width: min(960px, calc(100% - 32px)); margin: 36px auto; }
     header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .refresh-button { background: #4b5563; }
     h1 { font-size: 1.6rem; margin: 0 0 20px; }
     a { color: #93c5fd; }
     #url-list { display: grid; gap: 8px; margin-bottom: 18px; }
@@ -32,7 +33,10 @@
 </head>
 <body>
   <main>
-    <header><h1>xBiteTV</h1></header>
+    <header>
+      <h1>xBiteTV</h1>
+      <button id="refresh-history" class="refresh-button" type="button">Refresh history</button>
+    </header>
     <section id="url-list" aria-label="Saved URLs"></section>
     <p id="status" role="status"></p>
     <p id="selected-url" aria-live="polite"></p>
@@ -43,11 +47,13 @@
     const urlList = document.querySelector('#url-list');
     const status = document.querySelector('#status');
     const selectedUrlLabel = document.querySelector('#selected-url');
+    const refreshHistoryButton = document.querySelector('#refresh-history');
     const sources = document.querySelector('#sources');
     const player = document.querySelector('#player');
     let hls = null;
     let pollTimer = null;
     let activeUrl = '';
+    let historyKey = '';
     const knownSources = new Set();
 
     async function readJson(response) {
@@ -125,11 +131,16 @@
       }
     }
     async function startJob(url) {
+      const sameUrl = activeUrl === url;
       activeUrl = url;
       selectedUrlLabel.textContent = 'Selected URL: ' + url;
       document.querySelectorAll('.url-row').forEach(row => {
         row.classList.toggle('selected', row.dataset.url === url);
       });
+      if (sameUrl && (player.currentSrc || player.src)) {
+        setStatus('This URL is already selected.');
+        return;
+      }
       if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
       knownSources.clear();
       sources.replaceChildren();
@@ -151,6 +162,9 @@
       }
     }
     function renderHistory(urls) {
+      const nextHistoryKey = urls.join('\u0000');
+      if (nextHistoryKey === historyKey) return;
+      historyKey = nextHistoryKey;
       urlList.replaceChildren();
       if (!urls.length) {
         const empty = document.createElement('div');
@@ -183,8 +197,10 @@
       if (!response.ok) throw new Error(data.error || 'History request failed (' + response.status + ').');
       renderHistory(data.urls || []);
     }
+    refreshHistoryButton.addEventListener('click', () => {
+      loadHistory().then(() => setStatus('History refreshed.')).catch(error => setStatus(error.message, true));
+    });
     loadHistory().catch(error => setStatus(error.message, true));
-    setInterval(() => loadHistory().catch(() => {}), 5000);
   </script>
 </body>
 </html>

@@ -6,6 +6,7 @@ import ipaddress
 import logging
 import socket
 import threading
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict
@@ -22,8 +23,11 @@ ALLOWED_PORTS = {None, 80, 443}
 MAX_JOB_SOURCES = 24
 MAX_JOB_RESULTS = 8
 MAX_HISTORY_URLS = 50
+VIDEO_CACHE_TTL_SECONDS = 600
 jobs: dict[str, dict] = {}
 jobs_lock = threading.Lock()
+active_jobs: dict[str, str] = {}
+video_cache: dict[str, dict] = {}
 history_urls: list[str] = []
 history_lock = threading.Lock()
 job_executor = ThreadPoolExecutor(max_workers=8)
@@ -147,7 +151,15 @@ def _run_source_job(job_id: str, index_url: str) -> None:
             jobs[job_id]["error"] = "source discovery failed"
     finally:
         with jobs_lock:
-            jobs[job_id].pop("video_urls", None)
+            job = jobs[job_id]
+            job.pop("video_urls", None)
+            if active_jobs.get(index_url) == job_id:
+                active_jobs.pop(index_url, None)
+            if job["status"] == "complete" and job["videos"]:
+                video_cache[index_url] = {
+                    "created": time.monotonic(),
+                    "videos": list(job["videos"]),
+                }
 
 
 def create_app() -> Flask:
@@ -199,10 +211,32 @@ def create_app() -> Flask:
             return {"error": str(exc)}, 400
 
         _remember_url(target_url)
-        job_id = uuid.uuid4().hex
         with jobs_lock:
+            now = time.monotonic()
+            cached = video_cache.get(target_url)
+            if cached and now - cached["created"] < VIDEO_CACHE_TTL_SECONDS:
+                job_id = uuid.uuid4().hex
+                jobs[job_id] = {
+                    "status": "complete",
+                    "cached": True,
+                    "url": target_url,
+                    "videos": list(cached["videos"]),
+                    "completed": 1,
+                    "total": 1,
+                }
+                return {"job_id": job_id, "status": "complete", "cached": True}, 202
+            if cached:
+                video_cache.pop(target_url, None)
+
+            existing_job_id = active_jobs.get(target_url)
+            if existing_job_id and jobs.get(existing_job_id, {}).get("status") == "running":
+                return {"job_id": existing_job_id, "status": "running", "deduplicated": True}, 202
+
+            job_id = uuid.uuid4().hex
+            active_jobs[target_url] = job_id
             jobs[job_id] = {
                 "status": "running",
+                "cached": False,
                 "url": target_url,
                 "videos": [],
                 "video_urls": set(),
@@ -228,6 +262,14 @@ def create_app() -> Flask:
         except ValueError as exc:
             return {"error": str(exc)}, 400
 
+        with jobs_lock:
+            cached = video_cache.get(target_url)
+            if cached and time.monotonic() - cached["created"] < VIDEO_CACHE_TTL_SECONDS:
+                app.logger.info("serving cached video results for %s", target_url)
+                return {"url": target_url, "videos": list(cached["videos"]), "cached": True}, 200
+            if cached:
+                video_cache.pop(target_url, None)
+
         try:
             mode = request.args.get("mode", "auto").lower()
             if mode == "sources":
@@ -251,6 +293,13 @@ def create_app() -> Flask:
         except Exception:
             app.logger.exception("video URL discovery failed for %s", target_url)
             return {"error": "video URL discovery failed"}, 502
+
+        if candidates:
+            with jobs_lock:
+                video_cache[target_url] = {
+                    "created": time.monotonic(),
+                    "videos": [asdict(candidate) for candidate in candidates[:8]],
+                }
 
         return {
             "url": target_url,
