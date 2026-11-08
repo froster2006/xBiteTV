@@ -27,6 +27,7 @@
     video:focus { outline: 3px solid #a855f7; outline-offset: 3px; }
     #sources { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
     #status, #selected-url { min-height: 1.5em; color: #9ca3af; overflow-wrap: anywhere; }
+    #source-url { min-height: 1.5em; color: #93c5fd; overflow-wrap: anywhere; font-size: .9rem; }
     .error { color: #fca5a5 !important; }
     .empty { color: #9ca3af; padding: 12px 0; }
   </style>
@@ -41,12 +42,14 @@
     <p id="status" role="status"></p>
     <p id="selected-url" aria-live="polite"></p>
     <div id="sources" aria-label="Video sources"></div>
+    <p id="source-url" aria-live="polite"></p>
     <video id="player" controls playsinline tabindex="0"></video>
   </main>
   <script>
     const urlList = document.querySelector('#url-list');
     const status = document.querySelector('#status');
     const selectedUrlLabel = document.querySelector('#selected-url');
+    const sourceUrlLabel = document.querySelector('#source-url');
     const refreshHistoryButton = document.querySelector('#refresh-history');
     const sources = document.querySelector('#sources');
     const player = document.querySelector('#player');
@@ -109,7 +112,11 @@
         const button = document.createElement('button');
         button.className = 'source-button';
         button.type = 'button';
+        button.title = source.url;
         button.textContent = 'Source ' + (sources.children.length + 1);
+        const showUrl = () => { sourceUrlLabel.textContent = source.url; };
+        button.addEventListener('mouseenter', showUrl);
+        button.addEventListener('focus', showUrl);
         button.addEventListener('click', () => playSource(source, button));
         sources.appendChild(button);
         if (sources.children.length === 1) playSource(source, button);
@@ -156,6 +163,7 @@
         });
         const job = await readJson(response);
         if (!response.ok) throw new Error(job.error || 'Job request failed (' + response.status + ').');
+        if (job.cached) setStatus('Using cached results.');
         await pollJob(job.job_id);
       } catch (error) {
         setStatus(error.message, true);

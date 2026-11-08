@@ -13,6 +13,7 @@ RUN python -m pip install --no-cache-dir -r requirements.txt \
 RUN useradd --create-home --uid 10001 appuser
 COPY --chown=appuser:appuser src ./src
 COPY --chown=appuser:appuser web ./web
+COPY --chown=appuser:appuser source_ignore.txt ./source_ignore.txt
 
 USER appuser
 EXPOSE 5000

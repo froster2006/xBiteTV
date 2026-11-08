@@ -8,6 +8,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
 from urllib.parse import urljoin, urlparse
 
@@ -15,6 +16,7 @@ from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError, sy
 
 
 logger = logging.getLogger(__name__)
+IGNORE_FILE = Path(__file__).resolve().parents[1] / "source_ignore.txt"
 
 
 MEDIA_RE = re.compile(r"\.(?:m3u8|mpd|mp4|webm|m4v)(?:[?#]|$)", re.IGNORECASE)
@@ -32,6 +34,21 @@ class Candidate:
     url: str
     source: str
     content_type: str | None = None
+
+
+def _ignored_fragments() -> list[str]:
+    if not IGNORE_FILE.exists():
+        return []
+    return [
+        line.strip().lower().rstrip("/")
+        for line in IGNORE_FILE.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+
+
+def _is_ignored_url(url: str) -> bool:
+    lowered_url = url.lower()
+    return any(fragment in lowered_url for fragment in _ignored_fragments())
 
 
 def _rank_source_link(item: dict[str, str]) -> int:
@@ -65,12 +82,16 @@ def discover_source_links(index_url: str) -> list[str]:
     for item in raw_links:
         absolute_url = urljoin(index_url, item.get("url", ""))
         parsed = urlparse(absolute_url)
-        if parsed.scheme in {"http", "https"} and absolute_url != index_url:
+        if (
+            parsed.scheme in {"http", "https"}
+            and absolute_url != index_url
+            and not _is_ignored_url(absolute_url)
+        ):
             links.setdefault(absolute_url, {"text": item.get("text", ""), "url": absolute_url})
     for table in table_html:
         for literal_url in re.findall(r"https?://[^\s\"'<>]+", html.unescape(table)):
             clean_url = literal_url.rstrip(").,;'")
-            if clean_url != index_url:
+            if clean_url != index_url and not _is_ignored_url(clean_url):
                 links.setdefault(clean_url, {"text": "table link", "url": clean_url})
     return [item["url"] for item in sorted(links.values(), key=_rank_source_link, reverse=True)]
 
@@ -222,28 +243,29 @@ def find_video_urls(
 
     unique: dict[str, Candidate] = {}
     for candidate in candidates:
-        unique.setdefault(candidate.url, candidate)
+        if not _is_ignored_url(candidate.url):
+            unique.setdefault(candidate.url, candidate)
     return list(unique.values())
 
 
 def find_video_urls_from_index(
     index_url: str,
     *,
-    max_results: int = 8,
+    max_results: int | None = None,
     validate_url: Callable[[str], str] | None = None,
 ) -> list[Candidate]:
     """Discover source links on an index page, then inspect them for media URLs."""
-    if max_results < 1:
+    if max_results is not None and max_results < 1:
         raise ValueError("max_results must be at least 1")
 
     ordered_links = [{"url": link} for link in discover_source_links(index_url)]
     results: dict[str, Candidate] = {}
-    for link in ordered_links[:24]:
+    for link in ordered_links:
         try:
             child_url = validate_url(link["url"]) if validate_url else link["url"]
             for candidate in find_video_urls(child_url):
                 results.setdefault(candidate.url, candidate)
-                if len(results) >= max_results:
+                if max_results is not None and len(results) >= max_results:
                     return list(results.values())
         except (ValueError, PlaywrightTimeoutError):
             continue

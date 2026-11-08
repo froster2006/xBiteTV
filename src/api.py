@@ -20,8 +20,8 @@ from .extract_video_url import discover_source_links, find_video_urls, find_vide
 MAX_URL_LENGTH = 2_048
 ALLOWED_SCHEMES = {"http", "https"}
 ALLOWED_PORTS = {None, 80, 443}
-MAX_JOB_SOURCES = 24
-MAX_JOB_RESULTS = 8
+MAX_JOB_SOURCES = 100
+MAX_JOB_RESULTS = 10
 MAX_HISTORY_URLS = 50
 VIDEO_CACHE_TTL_SECONDS = 600
 jobs: dict[str, dict] = {}
@@ -127,7 +127,8 @@ def _run_source_job(job_id: str, index_url: str) -> None:
                 candidates = []
             with jobs_lock:
                 job = jobs[job_id]
-                for candidate in candidates:
+                remaining = MAX_JOB_RESULTS - len(job["videos"])
+                for candidate in candidates[:remaining]:
                     app.logger.info("job %s video candidate found: %s", job_id, candidate.url)
                     if candidate.url not in job["video_urls"]:
                         job["videos"].append(asdict(candidate))
@@ -141,6 +142,10 @@ def _run_source_job(job_id: str, index_url: str) -> None:
                     len(job["videos"]),
                 )
                 if len(job["videos"]) >= MAX_JOB_RESULTS:
+                    app.logger.info("job %s reached the %d-result limit", job_id, MAX_JOB_RESULTS)
+                    for pending in futures:
+                        if not pending.done():
+                            pending.cancel()
                     break
         with jobs_lock:
             jobs[job_id]["status"] = "complete"
@@ -160,6 +165,7 @@ def _run_source_job(job_id: str, index_url: str) -> None:
                     "created": time.monotonic(),
                     "videos": list(job["videos"]),
                 }
+                app.logger.info("cached %d result(s) for %s", len(job["videos"]), index_url)
 
 
 def create_app() -> Flask:
@@ -216,6 +222,7 @@ def create_app() -> Flask:
             cached = video_cache.get(target_url)
             if cached and now - cached["created"] < VIDEO_CACHE_TTL_SECONDS:
                 job_id = uuid.uuid4().hex
+                app.logger.info("cache hit for %s", target_url)
                 jobs[job_id] = {
                     "status": "complete",
                     "cached": True,
@@ -226,6 +233,7 @@ def create_app() -> Flask:
                 }
                 return {"job_id": job_id, "status": "complete", "cached": True}, 202
             if cached:
+                app.logger.info("expired cache entry for %s", target_url)
                 video_cache.pop(target_url, None)
 
             existing_job_id = active_jobs.get(target_url)
@@ -275,7 +283,7 @@ def create_app() -> Flask:
             if mode == "sources":
                 candidates = find_video_urls_from_index(
                     target_url,
-                    max_results=8,
+                    max_results=MAX_JOB_RESULTS,
                     validate_url=_validate_target_url,
                 )
             elif mode == "direct":
@@ -285,7 +293,7 @@ def create_app() -> Flask:
                 if not candidates:
                     candidates = find_video_urls_from_index(
                         target_url,
-                        max_results=8,
+                        max_results=MAX_JOB_RESULTS,
                         validate_url=_validate_target_url,
                     )
             else:
@@ -298,12 +306,12 @@ def create_app() -> Flask:
             with jobs_lock:
                 video_cache[target_url] = {
                     "created": time.monotonic(),
-                    "videos": [asdict(candidate) for candidate in candidates[:8]],
+                    "videos": [asdict(candidate) for candidate in candidates[:MAX_JOB_RESULTS]],
                 }
 
         return {
             "url": target_url,
-            "videos": [asdict(candidate) for candidate in candidates[:8]],
+            "videos": [asdict(candidate) for candidate in candidates[:MAX_JOB_RESULTS]],
         }, 200
 
     @app.errorhandler(404)

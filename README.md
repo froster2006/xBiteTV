@@ -79,4 +79,8 @@ powershell.exe -ExecutionPolicy Bypass -File .\build-and-install.ps1
 
 The TV and NAS must be on the same network. Rebuild the APK whenever the NAS address changes.
 
+## Ignoring bad sources
+
+Add one host or URL fragment per line to `source_ignore.txt`. Matching source links and video candidates are skipped. Changes take effect after restarting the backend or rebuilding the Docker image.
+
 Only use the service with sites and media you are authorized to access. Do not use it to bypass DRM, paywalls, authentication, or access controls.
