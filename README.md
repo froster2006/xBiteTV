@@ -1,5 +1,9 @@
 # xBiteTV
 
+## Overview
+
+The purpose of this project is to watch authorized games from Footybite or NBAbite on a TV. Deploy the Python/Playwright backend to a server that can reach the target sites. The frontend has two parts: `web/input.html` is intended for use on a cellphone to enter game URLs, and the TV app displays those saved URLs so you can select one and play its available video sources. The TV and phone should access the same deployed backend.
+
 urlSteam is a Python/Playwright service that discovers observable video URLs from authorized video pages and presents them in a simple browser player.
 
 ## Local setup

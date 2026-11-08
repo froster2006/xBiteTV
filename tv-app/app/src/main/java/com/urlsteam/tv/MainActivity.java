@@ -12,7 +12,7 @@ import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 
 public class MainActivity extends Activity {
-    private static final String START_URL = "http://192.168.50.88:5000/";
+    private static final String START_URL = "http://192.168.1.201:7666/";
 
     private FrameLayout root;
     private WebView webView;
@@ -64,6 +64,7 @@ public class MainActivity extends Activity {
     private void hideFullscreen() {
         root.removeView(fullscreenView);
         fullscreenView = null;
+        getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         if (fullscreenCallback != null) {
             fullscreenCallback.onCustomViewHidden();
         }
@@ -80,6 +81,7 @@ public class MainActivity extends Activity {
             }
             fullscreenView = view;
             fullscreenCallback = callback;
+            getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             webView.setVisibility(View.GONE);
             root.addView(fullscreenView, new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
