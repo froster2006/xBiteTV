@@ -16,8 +16,12 @@ from urllib.parse import urlparse
 
 from flask import Flask, jsonify, request
 
-from .extract_video_url import discover_source_links, find_video_urls, find_video_urls_from_index
-from .match_links import find_matches
+try:
+    from .extract_video_url import discover_source_links, find_video_urls, find_video_urls_from_index
+    from .match_links import find_matches_from_sources
+except ImportError:  # pragma: no cover - allows running this file directly with python src/api.py
+    from extract_video_url import discover_source_links, find_video_urls, find_video_urls_from_index
+    from match_links import find_matches_from_sources
 
 
 MAX_URL_LENGTH = 2_048
@@ -175,6 +179,11 @@ def _run_source_job(job_id: str, index_url: str) -> None:
 def create_app() -> Flask:
     app = Flask(__name__, static_folder="..", static_url_path="/web")
     app.logger.setLevel(logging.INFO)
+    if not app.logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+        app.logger.addHandler(handler)
+    app.logger.propagate = False
 
     @app.get("/")
     def index():
@@ -182,7 +191,7 @@ def create_app() -> Flask:
 
     @app.get("/game.html")
     def game_page():
-        return app.send_static_file("game.html")
+        return app.send_static_file("web/game.html")
 
     @app.get("/input.html")
     def input_page():
@@ -195,7 +204,7 @@ def create_app() -> Flask:
     @app.get("/games")
     def get_games() -> tuple[object, int]:
         try:
-            matches = find_matches("https://footybite.futbol/")
+            matches = find_matches_from_sources()
         except Exception as exc:
             app.logger.exception("failed to load live matches")
             return {"error": f"failed to load live matches: {exc}"}, 500
@@ -206,6 +215,7 @@ def create_app() -> Flask:
                 "status": match.status,
                 "link": match.url,
                 "source_web": match.source_web,
+                "source_prefix": match.source_prefix,
             }
             for match in matches
         ]

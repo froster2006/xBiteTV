@@ -3,13 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Live Matches - xBiteTV</title>
+  <title>xBiteTV</title>
   <style>
     :root { color-scheme: dark; font-family: system-ui, sans-serif; }
     body { margin: 0; background: #111827; color: #e5e7eb; }
-    main { width: min(840px, calc(100% - 32px)); margin: 36px auto; }
+    main { width: min(1120px, calc(100% - 32px)); margin: 36px auto; }
     h1 { font-size: 1.8rem; margin: 0 0 20px; }
-    #games-list { display: grid; gap: 12px; }
+    #games-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .source-panel { min-width: 0; padding: 12px; border: 1px solid #374151; border-radius: 10px; background: #17212f; }
+    .source-title { margin: 0 0 10px; color: #d1d5db; font-size: 0.9rem; font-weight: 700; }
+    .source-games { display: grid; gap: 8px; }
     .game-item { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px; background: #1f2937; border-radius: 10px; }
     .game-info { min-width: 0; }
     .game-name { font-size: 1.05rem; font-weight: 600; margin-bottom: 6px; }
@@ -20,11 +23,16 @@
     .empty { color: #9ca3af; padding: 12px 0; }
     .error { color: #fca5a5; }
     #status { min-height: 1.5em; margin-top: 12px; color: #9ca3af; }
+    #status:empty { display: none; }
+    @media (max-width: 680px) {
+      #games-list { grid-template-columns: minmax(0, 1fr); }
+      .source-panel { grid-column: 1 !important; grid-row: auto !important; }
+    }
   </style>
 </head>
 <body>
   <main>
-    <h1>Live Matches</h1>
+    <h1>xBiteTV</h1>
     <section id="games-list" aria-live="polite"></section>
     <p id="status" role="status"></p>
   </main>
@@ -52,41 +60,65 @@
         return;
       }
 
+      const groups = new Map();
       games.forEach(game => {
-        const row = document.createElement('div');
-        row.className = 'game-item';
+        const source = game.source_prefix || game.source_web || 'Other';
+        if (!groups.has(source)) groups.set(source, []);
+        groups.get(source).push(game);
+      });
 
-        const info = document.createElement('div');
-        info.className = 'game-info';
+      [...groups.entries()].forEach(([source, sourceGames], sourceIndex) => {
+        const panel = document.createElement('section');
+        panel.className = 'source-panel';
+        panel.style.gridColumn = String((sourceIndex % 2) + 1);
+        panel.style.gridRow = String(Math.floor(sourceIndex / 2) + 1);
 
-        const name = document.createElement('div');
-        name.className = 'game-name';
-        name.textContent = game.match_name || 'Unknown match';
+        const title = document.createElement('h2');
+        title.className = 'source-title';
+        title.textContent = source;
 
-        const gameStatus = document.createElement('div');
-        gameStatus.className = 'game-status';
-        gameStatus.textContent = game.status || 'Unknown status';
+        const rows = document.createElement('div');
+        rows.className = 'source-games';
 
-        info.append(name, gameStatus);
+        sourceGames.forEach(game => {
+          const row = document.createElement('div');
+          row.className = 'game-item';
 
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'watch-button';
+          const info = document.createElement('div');
+          info.className = 'game-info';
 
-        const matchUrl = getMatchLink(game);
-        const isStarted = String(game.status || '').trim().toLowerCase() === 'started';
-        if (!isStarted || !matchUrl) {
-          button.disabled = true;
-          button.textContent = isStarted ? 'Watch' : (game.status || 'Waiting');
-        } else {
-          button.textContent = 'Watch';
-          button.addEventListener('click', () => {
-            window.location.href = '/game.html?url=' + encodeURIComponent(matchUrl);
-          });
-        }
+          const name = document.createElement('div');
+          name.className = 'game-name';
+          name.textContent = game.match_name || 'Unknown match';
 
-        row.append(info, button);
-        gameList.appendChild(row);
+          const gameStatus = document.createElement('div');
+          gameStatus.className = 'game-status';
+          gameStatus.textContent = game.status || 'Unknown status';
+
+          info.append(name, gameStatus);
+
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'watch-button';
+
+          const matchUrl = getMatchLink(game);
+          const isStarted = String(game.status || '').trim().toLowerCase() === 'started';
+          if (!isStarted || !matchUrl) {
+            button.disabled = true;
+            button.textContent = isStarted ? 'Watch' : (game.status || 'Waiting');
+          } else {
+            button.textContent = 'Watch';
+            button.addEventListener('click', () => {
+              window.location.href = '/game.html?url=' + encodeURIComponent(matchUrl);
+            });
+          }
+
+          row.append(info, button);
+          rows.appendChild(row);
+        });
+
+        panel.append(title, rows);
+        gameList.appendChild(panel);
       });
     }
 
@@ -107,7 +139,6 @@
         }
 
         renderGames(Array.isArray(games) ? games : []);
-        setStatus('Loaded ' + games.length + ' match(es).');
       } catch (error) {
         setStatus(error.message || 'Failed to load matches.', true);
       }

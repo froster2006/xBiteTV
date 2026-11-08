@@ -1,0 +1,21 @@
+[
+  {
+    "source_link": "https://footybite.futbol/",
+    "prefix": "footybite",
+    "section_name": "Important Games",
+    "max_hours": null
+  },
+  {
+    "source_link": "https://nbabitez.com/",
+    "prefix": "nbabitez",
+    "section_name": "",
+    "max_hours": 12
+  },
+ {
+    "source_link": "https://www.nflbite.is/",
+    "prefix": "links.nflbite.run",
+    "section_name": "",
+    "max_hours": 12,
+    "allowed_hosts": ["links.nflbite.run"]
+  }
+]
