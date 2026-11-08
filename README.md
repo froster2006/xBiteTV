@@ -38,22 +38,45 @@ GET  /history
 DELETE /history?url=<encoded-url>
 ```
 
-## Docker
+## Deploy the backend to a NAS with Docker
 
-Build and publish the image:
+Build and publish the image from the project root:
 
 ```powershell
+docker login
 docker build -t YOUR_DOCKERHUB_USERNAME/urlsteam:latest .
 docker push YOUR_DOCKERHUB_USERNAME/urlsteam:latest
 ```
 
-Replace the image name in compose.yaml, then deploy on the NAS:
+Replace the image name in `compose.yaml` with the image you pushed. Copy `compose.yaml` to the NAS, then deploy:
 
 ```bash
 docker compose pull
 docker compose up -d
 ```
 
-Open port 7666 on the NAS. URL history is stored in memory and resets when the service restarts.
+The compose file maps NAS port `7666` to the container’s Flask port `5000`. The phone URL manager is available at `http://NAS_IP:7666/input.html`, and the browser player is at `http://NAS_IP:7666/`. URL history is stored in memory and resets when the container restarts.
+
+## Build the Google TV APK
+
+Before building, manually edit `tv-app/app/src/main/java/com/urlsteam/tv/MainActivity.java` and set `START_URL` to the deployed NAS address:
+
+```java
+private static final String START_URL = "http://NAS_IP:7666/";
+```
+
+Do not use `127.0.0.1` for a physical TV; that refers to the TV itself. From the repository root, build the debug APK with the included PowerShell script:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\build.ps1
+```
+
+The aligned APK is created at `tv-app/out/urlsteam-tv-aligned.apk`. To sign it with the local debug key and install it through ADB:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\build-and-install.ps1
+```
+
+The TV and NAS must be on the same network. Rebuild the APK whenever the NAS address changes.
 
 Only use the service with sites and media you are authorized to access. Do not use it to bypass DRM, paywalls, authentication, or access controls.
