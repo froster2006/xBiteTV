@@ -31,6 +31,7 @@ The API also exposes:
 
 ```text
 GET  /health
+GET  /games
 GET  /videos?url=<encoded-url>
 POST /jobs              {"url": "<page-url>"}
 GET  /jobs/<job-id>

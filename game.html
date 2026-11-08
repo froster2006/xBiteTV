@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Match Watch - xBiteTV</title>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; background: #111827; color: #e5e7eb; }
+    main { width: min(980px, calc(100% - 32px)); margin: 36px auto; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+    h1 { font-size: 1.6rem; margin: 0; }
+    #back-button { padding: 10px 16px; border: 0; border-radius: 8px; background: #374151; color: white; cursor: pointer; }
+    #back-button:hover { background: #4b5563; }
+    #sources { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+    .source-button { padding: 10px 16px; border: 0; border-radius: 8px; background: #2563eb; color: white; cursor: pointer; }
+    .source-button:hover { background: #1d4ed8; }
+    .source-button.active { background: #15803d; }
+    video { display: block; width: 100%; max-height: 70vh; background: #000; border-radius: 8px; }
+    #status, #selected-url, #source-url { min-height: 1.5em; color: #9ca3af; overflow-wrap: anywhere; }
+    .error { color: #fca5a5 !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1 id="match-title">Watch Match</h1>
+      <button id="back-button" type="button">Back to games</button>
+    </header>
+    <p id="status" role="status"></p>
+    <p id="selected-url" aria-live="polite"></p>
+    <div id="sources" aria-label="Video sources"></div>
+    <p id="source-url" aria-live="polite"></p>
+    <video id="player" controls playsinline tabindex="0"></video>
+  </main>
+  <script>
+    const status = document.querySelector('#status');
+    const selectedUrlLabel = document.querySelector('#selected-url');
+    const sourceUrlLabel = document.querySelector('#source-url');
+    const sources = document.querySelector('#sources');
+    const player = document.querySelector('#player');
+    const matchTitle = document.querySelector('#match-title');
+    const backButton = document.querySelector('#back-button');
+    const params = new URLSearchParams(window.location.search);
+    const matchUrl = params.get('url') || '';
+    let hls = null;
+    let pollTimer = null;
+    const knownSources = new Set();
+
+    async function readJson(response) {
+      const body = await response.text();
+      try { return body ? JSON.parse(body) : {}; }
+      catch { throw new Error('API returned HTTP ' + response.status + ' instead of JSON.'); }
+    }
+
+    function setStatus(message, isError = false) {
+      status.textContent = message;
+      status.classList.toggle('error', isError);
+    }
+
+    function isHls(source) {
+      const type = (source.content_type || '').toLowerCase();
+      return type.includes('mpegurl') || /\.m3u8(?:[?#]|$)/i.test(source.url);
+    }
+
+    function playSource(source, button) {
+      document.querySelectorAll('.source-button').forEach(item => item.classList.remove('active'));
+      button.classList.add('active');
+      if (hls) { hls.destroy(); hls = null; }
+      player.removeAttribute('src');
+      player.load();
+      if (isHls(source) && window.Hls && Hls.isSupported()) {
+        hls = new Hls();
+        hls.loadSource(source.url);
+        hls.attachMedia(player);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => player.play().catch(() => {}));
+      } else {
+        player.src = source.url;
+        player.load();
+        player.play().catch(() => {});
+      }
+      sourceUrlLabel.textContent = source.url;
+    }
+
+    async function enterFullscreen() {
+      if (document.fullscreenElement) return;
+      const request = player.requestFullscreen || player.webkitRequestFullscreen;
+      if (request) {
+        try { await request.call(player); } catch (_) { /* fullscreen may be unavailable */ }
+      }
+    }
+
+    player.addEventListener('click', enterFullscreen);
+    player.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        enterFullscreen();
+      }
+    });
+
+    function renderSources(videos) {
+      videos.forEach(source => {
+        if (!source || !source.url || knownSources.has(source.url)) return;
+        knownSources.add(source.url);
+        const button = document.createElement('button');
+        button.className = 'source-button';
+        button.type = 'button';
+        button.title = source.url;
+        button.textContent = 'Source ' + (sources.children.length + 1);
+        const showUrl = () => { sourceUrlLabel.textContent = source.url; };
+        button.addEventListener('mouseenter', showUrl);
+        button.addEventListener('focus', showUrl);
+        button.addEventListener('click', () => playSource(source, button));
+        sources.appendChild(button);
+        if (sources.children.length === 1) playSource(source, button);
+      });
+    }
+
+    async function pollJob(jobId) {
+      try {
+        const response = await fetch('/jobs/' + jobId);
+        const job = await readJson(response);
+        if (!response.ok) throw new Error(job.error || 'Job request failed (' + response.status + ').');
+        renderSources(job.videos || []);
+        const progress = job.total ? ' (' + job.completed + '/' + job.total + ' sources checked)' : '';
+        setStatus((job.videos?.length || 0) + ' source(s) found' + progress + '.');
+        if (job.status === 'running') {
+          pollTimer = setTimeout(() => pollJob(jobId), 5000);
+        } else if (job.status === 'failed') {
+          setStatus(job.error || 'Video discovery failed.', true);
+        } else if (!job.videos?.length) {
+          setStatus('No video sources found.', true);
+        }
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    }
+
+    async function startJob(url) {
+      if (!url) {
+        setStatus('No match URL supplied.', true);
+        return;
+      }
+
+      selectedUrlLabel.textContent = 'Selected URL: ' + url;
+      if (pollTimer) {
+        clearTimeout(pollTimer);
+        pollTimer = null;
+      }
+      knownSources.clear();
+      sources.replaceChildren();
+      if (hls) { hls.destroy(); hls = null; }
+      player.removeAttribute('src');
+      player.load();
+      setStatus('Checking ' + url + '...');
+
+      try {
+        const response = await fetch('/jobs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url })
+        });
+        const job = await readJson(response);
+        if (!response.ok) throw new Error(job.error || 'Job request failed (' + response.status + ').');
+        if (job.cached) setStatus('Using cached results.');
+        await pollJob(job.job_id);
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    }
+
+    async function resolveMatchName(url) {
+      try {
+        const response = await fetch('/games');
+        const raw = await response.text();
+        const games = raw ? JSON.parse(raw) : [];
+        if (!Array.isArray(games)) return null;
+        const match = games.find(item => {
+          const link = item.link || item.url || item.match_url || '';
+          return link === url;
+        });
+        return match?.match_name || null;
+      } catch {
+        return null;
+      }
+    }
+
+    async function loadMatch() {
+      if (!matchUrl) {
+        setStatus('No match URL supplied.', true);
+        return;
+      }
+
+      const foundName = await resolveMatchName(matchUrl);
+      if (foundName) {
+        matchTitle.textContent = foundName;
+        document.title = foundName + ' - xBiteTV';
+      }
+
+      backButton.addEventListener('click', () => {
+        window.location.href = '/';
+      });
+
+      await startJob(matchUrl);
+    }
+
+    loadMatch();
+  </script>
+</body>
+</html>

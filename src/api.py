@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
+import json
 import logging
 import socket
 import threading
@@ -10,11 +11,13 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict
+from pathlib import Path
 from urllib.parse import urlparse
 
 from flask import Flask, jsonify, request
 
 from .extract_video_url import discover_source_links, find_video_urls, find_video_urls_from_index
+from .match_links import find_matches
 
 
 MAX_URL_LENGTH = 2_048
@@ -31,6 +34,7 @@ video_cache: dict[str, dict] = {}
 history_urls: list[str] = []
 history_lock = threading.Lock()
 job_executor = ThreadPoolExecutor(max_workers=8)
+GAMES_FILE = Path(__file__).resolve().parents[1] / "games.json"
 
 
 def _validate_target_url(value: str | None) -> str:
@@ -169,20 +173,43 @@ def _run_source_job(job_id: str, index_url: str) -> None:
 
 
 def create_app() -> Flask:
-    app = Flask(__name__, static_folder="../web", static_url_path="/web")
+    app = Flask(__name__, static_folder="..", static_url_path="/web")
     app.logger.setLevel(logging.INFO)
 
     @app.get("/")
     def index():
-        return app.send_static_file("index.html")
+        return app.send_static_file("web/index.html")
+
+    @app.get("/game.html")
+    def game_page():
+        return app.send_static_file("game.html")
 
     @app.get("/input.html")
     def input_page():
-        return app.send_static_file("input.html")
+        return app.send_static_file("web/input.html")
 
     @app.get("/health")
     def health() -> tuple[dict[str, str], int]:
         return {"status": "ok"}, 200
+
+    @app.get("/games")
+    def get_games() -> tuple[object, int]:
+        try:
+            matches = find_matches("https://footybite.futbol/")
+        except Exception as exc:
+            app.logger.exception("failed to load live matches")
+            return {"error": f"failed to load live matches: {exc}"}, 500
+
+        games = [
+            {
+                "match_name": f"{match.team_a} vs {match.team_b}",
+                "status": match.status,
+                "link": match.url,
+                "source_web": match.source_web,
+            }
+            for match in matches
+        ]
+        return games, 200
 
     @app.get("/history")
     def get_history() -> tuple[dict, int]:
