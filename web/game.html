@@ -18,8 +18,21 @@
     .source-button:hover { background: #1d4ed8; }
     .source-button.active { background: #15803d; }
     video { display: block; width: 100%; max-height: 70vh; background: #000; border-radius: 8px; }
+    #status-row { display: flex; align-items: center; gap: 10px; min-height: 1.5em; }
     #status, #selected-url, #source-url { min-height: 1.5em; color: #9ca3af; overflow-wrap: anywhere; }
     .error { color: #fca5a5 !important; }
+    .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255, 255, 255, 0.25);
+      border-top-color: #f8fafc;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      vertical-align: middle;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -28,7 +41,10 @@
       <h1 id="match-title">Watch Match</h1>
       <button id="back-button" type="button">Back to games</button>
     </header>
-    <p id="status" role="status"></p>
+    <div id="status-row">
+      <span id="status-spinner" class="spinner" aria-hidden="true" hidden></span>
+      <p id="status" role="status"></p>
+    </div>
     <p id="selected-url" aria-live="polite"></p>
     <div id="sources" aria-label="Video sources"></div>
     <p id="source-url" aria-live="polite"></p>
@@ -36,6 +52,7 @@
   </main>
   <script>
     const status = document.querySelector('#status');
+    const statusSpinner = document.querySelector('#status-spinner');
     const selectedUrlLabel = document.querySelector('#selected-url');
     const sourceUrlLabel = document.querySelector('#source-url');
     const sources = document.querySelector('#sources');
@@ -54,9 +71,10 @@
       catch { throw new Error('API returned HTTP ' + response.status + ' instead of JSON.'); }
     }
 
-    function setStatus(message, isError = false) {
+    function setStatus(message, isError = false, isLoading = false) {
       status.textContent = message;
       status.classList.toggle('error', isError);
+      statusSpinner.hidden = !isLoading;
     }
 
     function isHls(source) {
@@ -113,7 +131,6 @@
         button.addEventListener('focus', showUrl);
         button.addEventListener('click', () => playSource(source, button));
         sources.appendChild(button);
-        if (sources.children.length === 1) playSource(source, button);
       });
     }
 
@@ -124,13 +141,14 @@
         if (!response.ok) throw new Error(job.error || 'Job request failed (' + response.status + ').');
         renderSources(job.videos || []);
         const progress = job.total ? ' (' + job.completed + '/' + job.total + ' sources checked)' : '';
-        setStatus((job.videos?.length || 0) + ' source(s) found' + progress + '.');
+        const isLoading = job.status === 'running';
+        setStatus((job.videos?.length || 0) + ' source(s) found' + progress + '.', false, isLoading);
         if (job.status === 'running') {
           pollTimer = setTimeout(() => pollJob(jobId), 5000);
         } else if (job.status === 'failed') {
-          setStatus(job.error || 'Video discovery failed.', true);
+          setStatus(job.error || 'Video discovery failed.', true, false);
         } else if (!job.videos?.length) {
-          setStatus('No video sources found.', true);
+          setStatus('No video sources found.', true, false);
         }
       } catch (error) {
         setStatus(error.message, true);
@@ -153,7 +171,7 @@
       if (hls) { hls.destroy(); hls = null; }
       player.removeAttribute('src');
       player.load();
-      setStatus('Checking ' + url + '...');
+      setStatus('Checking ' + url + '...', false, true);
 
       try {
         const response = await fetch('/jobs', {

@@ -22,6 +22,36 @@
     .watch-button[disabled] { opacity: 0.5; cursor: not-allowed; }
     .empty { color: #9ca3af; padding: 12px 0; }
     .error { color: #fca5a5; }
+    #loading-overlay {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(17, 24, 39, 0.72);
+      z-index: 1000;
+    }
+    #loading-overlay[hidden] { display: none; }
+    .loading-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      padding: 24px 28px;
+      border-radius: 12px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+    }
+    .spinner {
+      width: 28px;
+      height: 28px;
+      border: 3px solid rgba(148, 163, 184, 0.3);
+      border-top-color: #f8fafc;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
     #status { min-height: 1.5em; margin-top: 12px; color: #9ca3af; }
     #status:empty { display: none; }
     @media (max-width: 680px) {
@@ -31,6 +61,12 @@
   </style>
 </head>
 <body>
+  <div id="loading-overlay" aria-live="polite" aria-busy="true">
+    <div class="loading-card">
+      <div class="spinner" aria-hidden="true"></div>
+      <div>Loading matches...</div>
+    </div>
+  </div>
   <main>
     <h1>xBiteTV</h1>
     <section id="games-list" aria-live="polite"></section>
@@ -39,6 +75,7 @@
   <script>
     const gameList = document.querySelector('#games-list');
     const status = document.querySelector('#status');
+    const loadingOverlay = document.querySelector('#loading-overlay');
 
     function setStatus(message, isError = false) {
       status.textContent = message;
@@ -47,6 +84,10 @@
 
     function getMatchLink(game) {
       return game.link || game.url || game.match_url || '';
+    }
+
+    function setLoading(isLoading) {
+      loadingOverlay.hidden = !isLoading;
     }
 
     function renderGames(games) {
@@ -123,6 +164,7 @@
     }
 
     async function loadGames() {
+      setLoading(true);
       try {
         const response = await fetch('/games');
         const data = await response.text();
@@ -141,6 +183,8 @@
         renderGames(Array.isArray(games) ? games : []);
       } catch (error) {
         setStatus(error.message || 'Failed to load matches.', true);
+      } finally {
+        setLoading(false);
       }
     }
 
