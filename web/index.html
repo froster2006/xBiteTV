@@ -9,6 +9,9 @@
     body { margin: 0; background: #111827; color: #e5e7eb; }
     main { width: min(1120px, calc(100% - 32px)); margin: 36px auto; }
     h1 { font-size: 1.8rem; margin: 0 0 20px; }
+    #refresh-button { margin: -8px 0 20px; padding: 9px 13px; border: 0; border-radius: 6px; background: #374151; color: white; cursor: pointer; }
+    #refresh-button:hover:not(:disabled) { background: #4b5563; }
+    #refresh-button:disabled { opacity: 0.6; cursor: wait; }
     #games-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
     .source-panel { min-width: 0; padding: 12px; border: 1px solid #374151; border-radius: 10px; background: #17212f; }
     .source-title { margin: 0 0 10px; color: #d1d5db; font-size: 0.9rem; font-weight: 700; }
@@ -69,6 +72,7 @@
   </div>
   <main>
     <h1>xBiteTV</h1>
+    <button id="refresh-button" type="button">Refresh matches</button>
     <section id="games-list" aria-live="polite"></section>
     <p id="status" role="status"></p>
   </main>
@@ -76,6 +80,9 @@
     const gameList = document.querySelector('#games-list');
     const status = document.querySelector('#status');
     const loadingOverlay = document.querySelector('#loading-overlay');
+    const refreshButton = document.querySelector('#refresh-button');
+    const GAMES_CACHE_KEY = 'xbiteTV.games.v1';
+    const GAMES_CACHE_TTL_MS = 30 * 60 * 1000;
 
     function setStatus(message, isError = false) {
       status.textContent = message;
@@ -88,6 +95,32 @@
 
     function setLoading(isLoading) {
       loadingOverlay.hidden = !isLoading;
+      refreshButton.disabled = isLoading;
+    }
+
+    function readGamesCache() {
+      try {
+        const cached = JSON.parse(localStorage.getItem(GAMES_CACHE_KEY));
+        if (!cached || !Array.isArray(cached.games) || !Number.isFinite(cached.savedAt)) {
+          localStorage.removeItem(GAMES_CACHE_KEY);
+          return null;
+        }
+        if (Date.now() - cached.savedAt >= GAMES_CACHE_TTL_MS || cached.savedAt > Date.now()) {
+          localStorage.removeItem(GAMES_CACHE_KEY);
+          return null;
+        }
+        return cached.games;
+      } catch {
+        return null;
+      }
+    }
+
+    function writeGamesCache(games) {
+      try {
+        localStorage.setItem(GAMES_CACHE_KEY, JSON.stringify({ savedAt: Date.now(), games }));
+      } catch {
+        // Storage may be disabled or full; continue without caching.
+      }
     }
 
     function renderGames(games) {
@@ -163,8 +196,16 @@
       });
     }
 
-    async function loadGames() {
+    async function loadGames(forceRefresh = false) {
+      const cachedGames = forceRefresh ? null : readGamesCache();
+      if (cachedGames !== null) {
+        renderGames(cachedGames);
+        setLoading(false);
+        return;
+      }
+
       setLoading(true);
+      setStatus('');
       try {
         const response = await fetch('/games');
         const data = await response.text();
@@ -180,7 +221,9 @@
           throw new Error(error);
         }
 
-        renderGames(Array.isArray(games) ? games : []);
+        const gameListData = Array.isArray(games) ? games : [];
+        writeGamesCache(gameListData);
+        renderGames(gameListData);
       } catch (error) {
         setStatus(error.message || 'Failed to load matches.', true);
       } finally {
@@ -188,6 +231,7 @@
       }
     }
 
+    refreshButton.addEventListener('click', () => loadGames(true));
     loadGames();
   </script>
 </body>

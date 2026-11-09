@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import html
 import json
 import logging
 import re
@@ -51,49 +50,31 @@ def _is_ignored_url(url: str) -> bool:
     return any(fragment in lowered_url for fragment in _ignored_fragments())
 
 
-def _rank_source_link(item: dict[str, str]) -> int:
-    text = f"{item.get('text', '')} {item.get('url', '')}".lower()
-    terms = ("source", "stream", "watch", "live", "link", "player", "embed")
-    return sum(term in text for term in terms)
-
-
 def discover_source_links(index_url: str) -> list[str]:
-    """Return likely source-page links from a sports/event index page."""
+    """Return source URLs from hidden input values inside table rows."""
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         page = browser.new_page()
         try:
             page.goto(index_url, wait_until="domcontentloaded", timeout=30_000)
             page.wait_for_timeout(1_500)
-            raw_links = page.locator(
-                "table a, table iframe, table [data-href], table [data-url], table [data-link], table [onclick]"
-            ).evaluate_all(
-                """nodes => nodes.map(node => ({
-                    text: (node.innerText || node.title || '').trim(),
-                    url: node.href || node.src || node.dataset.href || node.dataset.url ||
-                         node.dataset.link || node.getAttribute('onclick') || ''
-                }))"""
+            source_values = page.locator("table tr input[type='hidden'][value]").evaluate_all(
+                "inputs => inputs.map(input => input.getAttribute('value'))"
             )
-            table_html = page.locator("table").evaluate_all("tables => tables.map(table => table.outerHTML)")
         finally:
             browser.close()
 
-    links: dict[str, dict[str, str]] = {}
-    for item in raw_links:
-        absolute_url = urljoin(index_url, item.get("url", ""))
+    links: dict[str, None] = {}
+    for value in source_values:
+        absolute_url = urljoin(index_url, value or "")
         parsed = urlparse(absolute_url)
         if (
             parsed.scheme in {"http", "https"}
             and absolute_url != index_url
             and not _is_ignored_url(absolute_url)
         ):
-            links.setdefault(absolute_url, {"text": item.get("text", ""), "url": absolute_url})
-    for table in table_html:
-        for literal_url in re.findall(r"https?://[^\s\"'<>]+", html.unescape(table)):
-            clean_url = literal_url.rstrip(").,;'")
-            if clean_url != index_url and not _is_ignored_url(clean_url):
-                links.setdefault(clean_url, {"text": "table link", "url": clean_url})
-    return [item["url"] for item in sorted(links.values(), key=_rank_source_link, reverse=True)]
+            links.setdefault(absolute_url, None)
+    return list(links)
 
 
 def _is_media_url(url: str, content_type: str | None = None) -> bool:
@@ -130,7 +111,7 @@ def find_video_urls(
     target_url: str,
     *,
     headed: bool = False,
-    wait_ms: int = 8_000,
+    wait_ms: int = 0,
     follow_iframes: bool = True,
 ) -> list[Candidate]:
     candidates: list[Candidate] = []
@@ -165,20 +146,8 @@ def find_video_urls(
         page.on("request", record_request)
         try:
             page.goto(target_url, wait_until="domcontentloaded", timeout=30_000)
-            for frame in page.frames:
-                try:
-                    frame.locator(
-                        "button[aria-label*='Play' i], .play, .play-button, .vjs-big-play-button"
-                    ).first.click(timeout=500)
-                except Exception:
-                    pass
-                try:
-                    frame.locator("video").evaluate_all(
-                        "videos => videos.forEach(video => video.play().catch(() => {}))"
-                    )
-                except Exception:
-                    pass
-            page.wait_for_timeout(wait_ms)
+            if wait_ms > 0:
+                page.wait_for_timeout(wait_ms)
             candidates.extend(_read_page_media(page))
             for resource_url in page.evaluate("() => performance.getEntriesByType('resource').map(entry => entry.name)"):
                 if _is_media_url(resource_url):
@@ -208,19 +177,8 @@ def find_video_urls(
                         iframe_page.on("response", record_response)
                         iframe_page.on("request", record_request)
                         iframe_page.goto(embedded_url, wait_until="domcontentloaded", timeout=30_000)
-                        try:
-                            iframe_page.locator(
-                                "button[aria-label*='Play' i], .play, .play-button, .vjs-big-play-button"
-                            ).first.click(timeout=500)
-                        except Exception:
-                            pass
-                        try:
-                            iframe_page.locator("video").evaluate_all(
-                                "videos => videos.forEach(video => video.play().catch(() => {}))"
-                            )
-                        except Exception:
-                            pass
-                        iframe_page.wait_for_timeout(wait_ms)
+                        if wait_ms > 0:
+                            iframe_page.wait_for_timeout(wait_ms)
                         candidates.extend(
                             Candidate(candidate.url, "iframe")
                             for candidate in _read_page_media(iframe_page)
@@ -235,7 +193,6 @@ def find_video_urls(
                     finally:
                         iframe_page.close()
         except PlaywrightTimeoutError:
-            # A slow page may still have produced useful response events.
             candidates.extend(_read_page_media(page))
         finally:
             context.close()
@@ -260,9 +217,10 @@ def find_video_urls_from_index(
 
     ordered_links = [{"url": link} for link in discover_source_links(index_url)]
     results: dict[str, Candidate] = {}
-    for link in ordered_links:
+    for index, link in enumerate(ordered_links, 1):
+        child_url = validate_url(link["url"]) if validate_url else link["url"]
+        print(f"[debug] child {index}/{len(ordered_links)} checking: {child_url}", flush=True)
         try:
-            child_url = validate_url(link["url"]) if validate_url else link["url"]
             for candidate in find_video_urls(child_url):
                 results.setdefault(candidate.url, candidate)
                 if max_results is not None and len(results) >= max_results:
