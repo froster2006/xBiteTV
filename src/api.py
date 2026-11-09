@@ -6,6 +6,7 @@ import ipaddress
 import json
 import logging
 import socket
+import sys
 import threading
 import time
 import uuid
@@ -113,19 +114,22 @@ def _run_source_job(job_id: str, index_url: str) -> None:
         app.logger.info("job %s discovered %d source link(s) from %s", job_id, len(source_urls), index_url)
         for number, source_url in enumerate(source_urls, 1):
             app.logger.info("job %s source %d discovered: %s", job_id, number, source_url)
+            print(f"[debug] job {job_id} source {number}/{len(source_urls)} checking: {source_url}", flush=True)
         with jobs_lock:
             jobs[job_id]["total"] = len(source_urls)
 
         futures = {}
-        for source_url in source_urls:
+        for number, source_url in enumerate(source_urls, 1):
             try:
                 validated_url = _validate_target_url(source_url)
             except ValueError:
                 app.logger.info("job %s skipped invalid source: %s", job_id, source_url)
+                print(f"[debug] job {job_id} source {number}/{len(source_urls)} skipped invalid: {source_url}", flush=True)
                 with jobs_lock:
                     jobs[job_id]["completed"] += 1
                 continue
             app.logger.info("job %s checking source: %s", job_id, validated_url)
+            print(f"[debug] job {job_id} source {number}/{len(source_urls)} running: {validated_url}", flush=True)
             futures[job_executor.submit(find_video_urls, validated_url)] = source_url
         for future in as_completed(futures):
             try:
@@ -177,10 +181,11 @@ def _run_source_job(job_id: str, index_url: str) -> None:
 
 
 def create_app() -> Flask:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s", stream=sys.stdout, force=True)
     app = Flask(__name__, static_folder="..", static_url_path="/web")
     app.logger.setLevel(logging.INFO)
     if not app.logger.handlers:
-        handler = logging.StreamHandler()
+        handler = logging.StreamHandler(sys.stdout)
         handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
         app.logger.addHandler(handler)
     app.logger.propagate = False
