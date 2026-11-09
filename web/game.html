@@ -7,7 +7,13 @@
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
   <style>
     :root { color-scheme: dark; font-family: system-ui, sans-serif; }
-    body { margin: 0; background: #111827; color: #e5e7eb; }
+    body {
+      min-height: 100vh;
+      margin: 0;
+      background: linear-gradient(128deg, #071a34 0%, #17326f 48%, #9428e8 100%);
+      background-attachment: fixed;
+      color: #e5e7eb;
+    }
     main { width: min(980px, calc(100% - 32px)); margin: 36px auto; }
     header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
     h1 { font-size: 1.6rem; margin: 0; }
@@ -45,7 +51,7 @@
       <span id="status-spinner" class="spinner" aria-hidden="true" hidden></span>
       <p id="status" role="status"></p>
     </div>
-    <p id="selected-url" aria-live="polite"></p>
+    <!-- <p id="selected-url" aria-live="polite"></p> -->
     <div id="sources" aria-label="Video sources"></div>
     <p id="source-url" aria-live="polite"></p>
     <video id="player" controls playsinline tabindex="0"></video>

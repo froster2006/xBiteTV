@@ -31,7 +31,7 @@ ALLOWED_PORTS = {None, 80, 443}
 MAX_JOB_SOURCES = 100
 MAX_JOB_RESULTS = 10
 MAX_HISTORY_URLS = 50
-VIDEO_CACHE_TTL_SECONDS = 600
+VIDEO_CACHE_TTL_SECONDS = 3600
 jobs: dict[str, dict] = {}
 jobs_lock = threading.Lock()
 active_jobs: dict[str, str] = {}
@@ -172,7 +172,7 @@ def _run_source_job(job_id: str, index_url: str) -> None:
             job.pop("video_urls", None)
             if active_jobs.get(index_url) == job_id:
                 active_jobs.pop(index_url, None)
-            if job["status"] == "complete" and job["videos"]:
+            if job["status"] == "complete":
                 video_cache[index_url] = {
                     "created": time.monotonic(),
                     "videos": list(job["videos"]),

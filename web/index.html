@@ -5,33 +5,93 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>xBiteTV</title>
   <style>
-    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
-    body { margin: 0; background: #111827; color: #e5e7eb; }
-    main { width: min(1120px, calc(100% - 32px)); margin: 36px auto; }
-    h1 { font-size: 1.8rem; margin: 0 0 20px; }
-    #refresh-button { margin: -8px 0 20px; padding: 9px 13px; border: 0; border-radius: 6px; background: #374151; color: white; cursor: pointer; }
-    #refresh-button:hover:not(:disabled) { background: #4b5563; }
+    :root {
+      color-scheme: dark;
+      font-family: "Trebuchet MS", sans-serif;
+      --background: #101722;
+      --surface: #1c2837;
+      --surface-hover: #26364a;
+      --line: #394a60;
+      --text: #edf2f7;
+      --muted: #a9b5c5;
+      --accent: #d7f36a;
+      --accent-text: #19200e;
+      --alert: #ff8875;
+    }
+    * { box-sizing: border-box; }
+    body {
+      min-height: 100vh;
+      margin: 0;
+      color: var(--text);
+      background-color: var(--background);
+      background-image: linear-gradient(128deg, #071a34 0%, #17326f 48%, #9428e8 100%);
+      background-attachment: fixed;
+    }
+    main { width: min(94vw, 1720px); margin: 48px auto 64px; }
+    .page-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 38px; }
+    h1 { margin: 0; font-size: 2.5rem; line-height: 1; font-weight: 700; }
+    #refresh-button {
+      min-height: 54px;
+      padding: 0 22px;
+      border: 0;
+      border-radius: 5px;
+      background: var(--accent);
+      color: var(--accent-text);
+      font: inherit;
+      font-size: 1.05rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background-color 140ms ease, transform 140ms ease;
+    }
+    #refresh-button:hover:not(:disabled) { background: #e5ff83; transform: translateY(-1px); }
     #refresh-button:disabled { opacity: 0.6; cursor: wait; }
-    #games-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-    .source-panel { min-width: 0; padding: 12px; border: 1px solid #374151; border-radius: 10px; background: #17212f; }
-    .source-title { margin: 0 0 10px; color: #d1d5db; font-size: 0.9rem; font-weight: 700; }
+    #games-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 34px 28px; }
+    .source-panel { min-width: 0; padding: 16px 0 0; border: 0; border-top: 2px solid var(--line); }
+    .source-title { margin: 0 0 14px; color: var(--accent); font-size: 1rem; font-weight: 700; }
     .source-games { display: grid; gap: 8px; }
-    .game-item { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px; background: #1f2937; border-radius: 10px; }
+    .game-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      min-height: 88px;
+      padding: 15px 16px;
+      border-left: 3px solid transparent;
+      border-radius: 4px;
+      background: var(--surface);
+      transition: background-color 140ms ease, border-color 140ms ease;
+    }
+    .game-item:focus-within { border-left-color: var(--accent); background: var(--surface-hover); }
     .game-info { min-width: 0; }
-    .game-name { font-size: 1.05rem; font-weight: 600; margin-bottom: 6px; }
-    .game-status { color: #9ca3af; }
-    .watch-button { padding: 10px 16px; border: 0; border-radius: 8px; background: #2563eb; color: white; cursor: pointer; }
-    .watch-button:hover { background: #1d4ed8; }
-    .watch-button[disabled] { opacity: 0.5; cursor: not-allowed; }
-    .empty { color: #9ca3af; padding: 12px 0; }
-    .error { color: #fca5a5; }
+    .game-name { margin-bottom: 7px; font-size: 1.25rem; line-height: 1.2; font-weight: 700; overflow-wrap: anywhere; }
+    .game-status { color: var(--muted); font-size: 1rem; }
+    .watch-button {
+      flex: 0 0 auto;
+      min-width: 106px;
+      min-height: 50px;
+      padding: 0 16px;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      background: var(--accent);
+      color: var(--accent-text);
+      font: inherit;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background-color 140ms ease, transform 140ms ease;
+    }
+    .watch-button:hover:not(:disabled) { background: #e5ff83; transform: translateY(-1px); }
+    .watch-button[disabled] { border-color: var(--line); background: #263242; color: var(--muted); cursor: not-allowed; }
+    button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+    .empty { grid-column: 1 / -1; color: var(--muted); padding: 24px 0; font-size: 1.2rem; }
+    .error { color: var(--alert); }
     #loading-overlay {
       position: fixed;
       inset: 0;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: rgba(17, 24, 39, 0.72);
+      background: rgba(8, 12, 20, 0.84);
       z-index: 1000;
     }
     #loading-overlay[hidden] { display: none; }
@@ -40,26 +100,36 @@
       flex-direction: column;
       align-items: center;
       gap: 12px;
-      padding: 24px 28px;
-      border-radius: 12px;
-      background: rgba(15, 23, 42, 0.9);
-      border: 1px solid rgba(148, 163, 184, 0.25);
-      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+      padding: 30px 38px;
+      border-radius: 6px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      font-size: 1.2rem;
     }
     .spinner {
-      width: 28px;
-      height: 28px;
-      border: 3px solid rgba(148, 163, 184, 0.3);
-      border-top-color: #f8fafc;
+      width: 34px;
+      height: 34px;
+      border: 3px solid var(--line);
+      border-top-color: var(--accent);
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    #status { min-height: 1.5em; margin-top: 12px; color: #9ca3af; }
+    #status { min-height: 1.5em; margin-top: 20px; color: var(--muted); font-size: 1rem; }
     #status:empty { display: none; }
-    @media (max-width: 680px) {
+    @media (max-width: 1280px) {
+      #games-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 720px) {
+      main { width: min(92vw, 560px); margin: 28px auto 40px; }
+      .page-header { align-items: flex-start; margin-bottom: 28px; }
+      h1 { font-size: 2rem; }
+      #refresh-button { min-height: 48px; padding: 0 14px; font-size: 0.95rem; }
       #games-list { grid-template-columns: minmax(0, 1fr); }
-      .source-panel { grid-column: 1 !important; grid-row: auto !important; }
+      #games-list .source-panel { grid-column: 1; grid-row: auto; }
+      .game-item { gap: 10px; padding: 12px; }
+      .game-name { font-size: 1.1rem; }
+      .watch-button { min-width: 88px; min-height: 46px; padding: 0 12px; }
     }
   </style>
 </head>
@@ -71,8 +141,10 @@
     </div>
   </div>
   <main>
-    <h1>xBiteTV</h1>
-    <button id="refresh-button" type="button">Refresh matches</button>
+    <header class="page-header">
+      <h1>xBiteTV</h1>
+      <button id="refresh-button" type="button">Refresh matches</button>
+    </header>
     <section id="games-list" aria-live="polite"></section>
     <p id="status" role="status"></p>
   </main>
@@ -141,11 +213,9 @@
         groups.get(source).push(game);
       });
 
-      [...groups.entries()].forEach(([source, sourceGames], sourceIndex) => {
+      [...groups.entries()].forEach(([source, sourceGames]) => {
         const panel = document.createElement('section');
         panel.className = 'source-panel';
-        panel.style.gridColumn = String((sourceIndex % 2) + 1);
-        panel.style.gridRow = String(Math.floor(sourceIndex / 2) + 1);
 
         const title = document.createElement('h2');
         title.className = 'source-title';
