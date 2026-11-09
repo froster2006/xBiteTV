@@ -76,6 +76,8 @@
     const gameList = document.querySelector('#games-list');
     const status = document.querySelector('#status');
     const loadingOverlay = document.querySelector('#loading-overlay');
+    const GAMES_CACHE_KEY = 'xbiteTV.games.v1';
+    const GAMES_CACHE_TTL_MS = 30 * 60 * 1000;
 
     function setStatus(message, isError = false) {
       status.textContent = message;
@@ -88,6 +90,31 @@
 
     function setLoading(isLoading) {
       loadingOverlay.hidden = !isLoading;
+    }
+
+    function readGamesCache() {
+      try {
+        const cached = JSON.parse(localStorage.getItem(GAMES_CACHE_KEY));
+        if (!cached || !Array.isArray(cached.games) || !Number.isFinite(cached.savedAt)) {
+          localStorage.removeItem(GAMES_CACHE_KEY);
+          return null;
+        }
+        if (Date.now() - cached.savedAt >= GAMES_CACHE_TTL_MS || cached.savedAt > Date.now()) {
+          localStorage.removeItem(GAMES_CACHE_KEY);
+          return null;
+        }
+        return cached.games;
+      } catch {
+        return null;
+      }
+    }
+
+    function writeGamesCache(games) {
+      try {
+        localStorage.setItem(GAMES_CACHE_KEY, JSON.stringify({ savedAt: Date.now(), games }));
+      } catch {
+        // Storage may be disabled or full; continue without caching.
+      }
     }
 
     function renderGames(games) {
@@ -164,6 +191,13 @@
     }
 
     async function loadGames() {
+      const cachedGames = readGamesCache();
+      if (cachedGames !== null) {
+        renderGames(cachedGames);
+        setLoading(false);
+        return;
+      }
+
       setLoading(true);
       try {
         const response = await fetch('/games');
@@ -180,7 +214,9 @@
           throw new Error(error);
         }
 
-        renderGames(Array.isArray(games) ? games : []);
+        const gameListData = Array.isArray(games) ? games : [];
+        writeGamesCache(gameListData);
+        renderGames(gameListData);
       } catch (error) {
         setStatus(error.message || 'Failed to load matches.', true);
       } finally {
