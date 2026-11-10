@@ -27,7 +27,7 @@
       background-image: linear-gradient(128deg, #071a34 0%, #17326f 48%, #9428e8 100%);
       background-attachment: fixed;
     }
-    main { width: min(94vw, 1720px); margin: 48px auto 64px; }
+    main { width: min(96vw, 1840px); margin: 48px auto 64px; }
     .page-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 38px; }
     h1 { margin: 0; font-size: 2.5rem; line-height: 1; font-weight: 700; }
     #refresh-button {
@@ -45,43 +45,70 @@
     }
     #refresh-button:hover:not(:disabled) { background: #e5ff83; transform: translateY(-1px); }
     #refresh-button:disabled { opacity: 0.6; cursor: wait; }
-    #games-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 34px 28px; }
-    .source-panel { min-width: 0; padding: 16px 0 0; border: 0; border-top: 2px solid var(--line); }
-    .source-title { margin: 0 0 14px; color: var(--accent); font-size: 1rem; font-weight: 700; }
-    .source-games { display: grid; gap: 8px; }
-    .game-item {
+    #games-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: start; gap: 20px; }
+    .game-card {
+      display: block;
+      min-width: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      color: inherit;
+      text-decoration: none;
+      transition: border-color 140ms ease, background-color 140ms ease;
+    }
+    .game-card.is-watchable { cursor: pointer; }
+    .game-card.is-watchable:hover { border-color: var(--accent); background: var(--surface-hover); }
+    .game-card:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+    .game-card-top {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 18px;
-      min-height: 88px;
-      padding: 15px 16px;
-      border-left: 3px solid transparent;
-      border-radius: 4px;
-      background: var(--surface);
-      transition: background-color 140ms ease, border-color 140ms ease;
+      gap: 8px;
+      min-height: 42px;
+      padding: 8px 12px;
+      background: #263547;
     }
-    .game-item:focus-within { border-left-color: var(--accent); background: var(--surface-hover); }
-    .game-info { min-width: 0; }
-    .game-name { margin-bottom: 7px; font-size: 1.25rem; line-height: 1.2; font-weight: 700; overflow-wrap: anywhere; }
-    .game-status { color: var(--muted); font-size: 1rem; }
-    .watch-button {
-      flex: 0 0 auto;
-      min-width: 106px;
-      min-height: 50px;
-      padding: 0 16px;
-      border: 1px solid transparent;
-      border-radius: 4px;
-      background: var(--accent);
-      color: var(--accent-text);
-      font: inherit;
-      font-size: 1rem;
-      font-weight: 700;
-      cursor: pointer;
-      transition: background-color 140ms ease, transform 140ms ease;
+    .league-tag, .game-status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      max-width: 50%;
+      min-height: 25px;
+      padding: 3px 9px;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      line-height: 1.2;
+      font-weight: 800;
+      overflow-wrap: anywhere;
     }
-    .watch-button:hover:not(:disabled) { background: #e5ff83; transform: translateY(-1px); }
-    .watch-button[disabled] { border-color: var(--line); background: #263242; color: var(--muted); cursor: not-allowed; }
+    .league-tag { background: #d7f36a; color: #19200e; }
+    .game-status-pill { justify-content: flex-end; background: #34445a; color: var(--muted); text-align: right; }
+    .game-status-pill::before { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: currentColor; content: ""; }
+    .game-status-pill.is-started { background: #492d2d; color: #ffad9e; }
+    .game-card-body {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 64px minmax(0, 1fr);
+      align-items: center;
+      gap: 8px;
+      min-height: 126px;
+      padding: 20px 12px 14px;
+    }
+    .team-column { min-width: 0; text-align: center; }
+    .team-name { margin: 0; font-size: 1rem; line-height: 1.3; font-weight: 800; overflow-wrap: anywhere; }
+    .vs-column { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+    .vs-badge {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      aspect-ratio: 1;
+      border-radius: 50%;
+      background: #34445a;
+      color: var(--text);
+      font-size: 0.7rem;
+      font-weight: 900;
+    }
     button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
     .empty { grid-column: 1 / -1; color: var(--muted); padding: 24px 0; font-size: 1.2rem; }
     .error { color: var(--alert); }
@@ -118,6 +145,9 @@
     #status { min-height: 1.5em; margin-top: 20px; color: var(--muted); font-size: 1rem; }
     #status:empty { display: none; }
     @media (max-width: 1280px) {
+      #games-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    @media (max-width: 900px) {
       #games-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (max-width: 720px) {
@@ -126,10 +156,8 @@
       h1 { font-size: 2rem; }
       #refresh-button { min-height: 48px; padding: 0 14px; font-size: 0.95rem; }
       #games-list { grid-template-columns: minmax(0, 1fr); }
-      #games-list .source-panel { grid-column: 1; grid-row: auto; }
-      .game-item { gap: 10px; padding: 12px; }
-      .game-name { font-size: 1.1rem; }
-      .watch-button { min-width: 88px; min-height: 46px; padding: 0 12px; }
+      .game-card-body { grid-template-columns: minmax(0, 1fr) 46px minmax(0, 1fr); gap: 5px; min-height: 112px; padding: 16px 8px 12px; }
+      .team-name { font-size: 0.95rem; }
     }
   </style>
 </head>
@@ -206,63 +234,58 @@
         return;
       }
 
-      const groups = new Map();
       games.forEach(game => {
-        const source = game.source_prefix || game.source_web || 'Other';
-        if (!groups.has(source)) groups.set(source, []);
-        groups.get(source).push(game);
-      });
-
-      [...groups.entries()].forEach(([source, sourceGames]) => {
-        const panel = document.createElement('section');
-        panel.className = 'source-panel';
-
-        const title = document.createElement('h2');
-        title.className = 'source-title';
-        title.textContent = source;
-
-        const rows = document.createElement('div');
-        rows.className = 'source-games';
-
-        sourceGames.forEach(game => {
-          const row = document.createElement('div');
-          row.className = 'game-item';
-
-          const info = document.createElement('div');
-          info.className = 'game-info';
-
-          const name = document.createElement('div');
-          name.className = 'game-name';
-          name.textContent = game.match_name || 'Unknown match';
-
-          const gameStatus = document.createElement('div');
-          gameStatus.className = 'game-status';
-          gameStatus.textContent = game.status || 'Unknown status';
-
-          info.append(name, gameStatus);
-
-          const button = document.createElement('button');
-          button.type = 'button';
-          button.className = 'watch-button';
-
+          const source = game.source_prefix || game.source_web || 'Other';
           const matchUrl = getMatchLink(game);
           const isStarted = String(game.status || '').trim().toLowerCase() === 'started';
-          if (!isStarted || !matchUrl) {
-            button.disabled = true;
-            button.textContent = isStarted ? 'Watch' : (game.status || 'Waiting');
-          } else {
-            button.textContent = 'Watch';
-            button.addEventListener('click', () => {
-              window.location.href = '/game.html?url=' + encodeURIComponent(matchUrl);
-            });
+          const isWatchable = isStarted && Boolean(matchUrl);
+          const card = document.createElement(isWatchable ? 'a' : 'article');
+          card.className = 'game-card' + (isWatchable ? ' is-watchable' : '');
+          if (isWatchable) {
+            card.href = '/game.html?url=' + encodeURIComponent(matchUrl);
+            card.setAttribute('aria-label', 'Watch ' + (game.match_name || 'match'));
           }
 
-          row.append(info, button);
-          rows.appendChild(row);
-        });
+          const cardTop = document.createElement('div');
+          cardTop.className = 'game-card-top';
 
-        panel.append(title, rows);
-        gameList.appendChild(panel);
+          const league = document.createElement('span');
+          league.className = 'league-tag';
+          league.textContent = source;
+
+          const gameStatus = document.createElement('span');
+          gameStatus.className = 'game-status-pill' + (isStarted ? ' is-started' : '');
+          gameStatus.textContent = game.status || 'Unknown status';
+          cardTop.append(league, gameStatus);
+
+          const teams = String(game.match_name || 'Unknown match').split(/\s+vs\.?\s+/i);
+          const cardBody = document.createElement('div');
+          cardBody.className = 'game-card-body';
+
+          const homeTeam = document.createElement('div');
+          homeTeam.className = 'team-column';
+          const homeName = document.createElement('h3');
+          homeName.className = 'team-name';
+          homeName.textContent = teams[0] || 'Unknown match';
+          homeTeam.appendChild(homeName);
+
+          const vsColumn = document.createElement('div');
+          vsColumn.className = 'vs-column';
+          const vsBadge = document.createElement('span');
+          vsBadge.className = 'vs-badge';
+          vsBadge.textContent = 'VS';
+          vsColumn.appendChild(vsBadge);
+
+          const awayTeam = document.createElement('div');
+          awayTeam.className = 'team-column';
+          const awayName = document.createElement('h3');
+          awayName.className = 'team-name';
+          awayName.textContent = teams.length > 1 ? teams.slice(1).join(' vs ') : 'Match';
+          awayTeam.appendChild(awayName);
+          cardBody.append(homeTeam, vsColumn, awayTeam);
+
+          card.append(cardTop, cardBody);
+          gameList.appendChild(card);
       });
     }
 
